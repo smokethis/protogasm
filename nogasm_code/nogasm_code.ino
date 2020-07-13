@@ -115,6 +115,9 @@ int pLimit = DEFAULT_PLIMIT; //Limit in change of pressure before the vibrator t
 int maxSpeed = 255; //maximum speed the motor will ramp up to in automatic mode
 float motSpeed = 0; //Motor speed, 0-255 (float to maintain smooth ramping to low speeds)
 
+#define sbi(port, bit) (port) |= (1 << (bit))
+#define cbi(port, bit) (port) &= ~(1 << (bit))
+
 //=======EEPROM Addresses============================
 //128b available on teensy LC
 #define BEEP_ADDR         1
