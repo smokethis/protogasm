@@ -111,7 +111,7 @@ CRGB leds[NUM_LEDS];
 int pressure = 0;
 int averagePressure = 0; //Running 25 second average pressure
 int rampUp = 30; //Ramp-up time, in seconds
-int cooldownType = 1;// 1=Half of rampup, 2=Double rampup, 3=Time in seconds (cooldown), 4=Slow Creep
+int cooldownType = 1;// 1=Half of rampup, 2=Double rampup, 3=Time in seconds (cooldown), 4=Slow Creep (Extends cooldown up to max when edge is reached), 5=More Sensitive (will lower level of sensitivity every edge)
 if (cooldownType == 4){
 	int cooldown = 1; // Start it with minimum cooldown, then it will increase as time goes on.
 	int cooldownStep = 1;// How many notches to raise up cooldown on every full cycle.
@@ -121,6 +121,11 @@ if (cooldownType == 4){
 else{
 	int cooldown = 120; //Time, in seconds, before turning back on once contractions are felt.
 }
+
+if (cooldownType == 5){
+	int pressureStep = 1; // The amount per edge that the pressure sensitivity lowers by.
+}
+
 int pressureLimit = 600; //Limit in change of pressure before the vibrator turns off
 int maxMotorSpeed = 255; //maximum speed the motor will ramp up to in automatic mode
 float motorSpeed = 0; //Motor speed, 0-255 (float to maintain smooth ramping to low speeds)
@@ -154,9 +159,16 @@ void setup() {
 
 	// Classic AVR based Arduinos have a PWM frequency of about 490Hz which
 	// causes the motor to whine.  Change the prescaler to achieve 31372Hz.
-	sbi(TCCR1B, CS10);
-	cbi(TCCR1B, CS11);
-	cbi(TCCR1B, CS12);
+	
+	// As far as I understand it, sbi and cbi have been depreciated, and this is a replacement. I cannot compile to code without this replacement (or simply removing the lines).
+	//#define sbi(port, bit) (port) |= (1 << (bit))
+	//#define cbi(port, bit) (port) &= ~(1 << (bit))
+	//sbi(TCCR1B, CS10);
+	//cbi(TCCR1B, CS11);
+	//cbi(TCCR1B, CS12);
+	TCCR1B |= (1<<CS10);
+	TCCR1B |= (1<<CS11);
+	TCCR1B |= (1<<CS12);
 
 	pinMode(MOTPIN,OUTPUT); //Enable "analog" out (PWM)
 
@@ -177,7 +189,7 @@ void setup() {
 
 	//Recall saved settings from memory
 	sensitivity = EEPROM.read(SENSITIVITY_ADDR);
-	maxMotorSpeed = min(EEPROM.read(MAX_SPEED_ADDR),MOT_MAX); //Obey the MOT_MAX the first power  cycle after chaning it.
+	maxMotorSpeed = min(EEPROM.read(MAX_SPEED_ADDR),MOT_MAX); //Obey the MOT_MAX the first power cycle after changing it.
 	beep_motor(1047,1396,2093); //Power on beep
 }
 
@@ -279,6 +291,15 @@ void run_auto() {
 			}
 			}
 		}
+		else if (cooldownType == 5) {
+			motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
+		if (cooldownFlag == 1){
+			cooldownFlag = 0; // Set cooldown flag to show that the edge has been made, so don't adjust the cooldown anymore this cycle.
+			if (cooldown <= maxCooldown) {
+			pressureLimit == pressureLimit - pressureStep; // Start fast and increase the cooldown to be slower and slower as time goes on.
+			}
+			}
+		}
 	}
   else if (motorSpeed < (float)maxMotorSpeed) {
 	motorSpeed += motorIncrement;//If it's below the max speed, ramp it up a notch towards max speed.
@@ -331,6 +352,7 @@ uint8_t check_button(){
 	static unsigned long keyDownTime = 0;
 	uint8_t btnState = BTN_NONE;
 	bool thisBtn = digitalRead(ENC_SW);
+	Serial.println(thisBtn== ENC_SW_DOWN ? "button down" : "button up" ); // Record if the button is pressed.
 
 	//Detect single presses, no repeating, on keyup
 	if(thisBtn == ENC_SW_DOWN && lastBtn == ENC_SW_UP){
