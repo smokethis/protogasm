@@ -59,6 +59,13 @@ Encoder myEnc(3, 2); //Quadrature inputs
 //Motor
 #define MOTPIN 9
 
+//=======EEPROM Addresses============================
+//128b available on teensy LC
+#define BEEP_ADDR         1
+#define MAX_SPEED_ADDR    2
+#define SENSITIVITY_ADDR  3
+//#define RAMPSPEED_ADDR    4 //For now, ramp speed adjustments aren't implemented
+
 //Pressure Sensor Analog In
 #define BUTTPIN A0
 // Sampling 4x and not dividing keeps the samples from the Arduino Uno's 10 bit
@@ -107,215 +114,224 @@ uint8_t state = MANUAL;
 
 CRGB leds[NUM_LEDS];
 
-//int bri =100; //Brightness setting
 int pressure = 0;
 int averagePressure = 0; //Running 25 second average pressure
 int rampUp = 30; //Ramp-up time, in seconds
 int cooldownType = 1;// 1=Half of rampup, 2=Double rampup, 3=Time in seconds (cooldown), 4=Slow Creep (Extends cooldown up to max when edge is reached), 5=More Sensitive (will lower level of sensitivity every edge)
-if (cooldownType == 4){
-	int cooldown = 1; // Start it with minimum cooldown, then it will increase as time goes on.
-	int cooldownStep = 1;// How many notches to raise up cooldown on every full cycle.
-	int cooldownFlag = 1;// Signal that a cycle is complete. 1 = Ready to adjust cooldown when needed, 0 = Do not adjust cooldown.
-	int maxCooldown = 180;// Max number of seconds of the cooldown. It will never raise above this amount.
-}
-else{
-	int cooldown = 120; //Time, in seconds, before turning back on once contractions are felt.
-}
-
-if (cooldownType == 5){
-	int pressureStep = 1; // The amount per edge that the pressure sensitivity lowers by.
-}
-
 int pressureLimit = 600; //Limit in change of pressure before the vibrator turns off
 int maxMotorSpeed = 255; //maximum speed the motor will ramp up to in automatic mode
 float motorSpeed = 0; //Motor speed, 0-255 (float to maintain smooth ramping to low speeds)
+int pressureStep = 1; // The amount per edge that the pressure sensitivity lowers by.
 
-//=======EEPROM Addresses============================
-//128b available on teensy LC
-#define BEEP_ADDR         1
-#define MAX_SPEED_ADDR    2
-#define SENSITIVITY_ADDR  3
-//#define RAMPSPEED_ADDR    4 //For now, ramp speed adjustments aren't implemented
+int cooldown = 120; //Time, in seconds, before turning back on once contractions are felt.
+int cooldownStep = 1;// How many notches to raise up cooldown on every full cycle.
+int cooldownFlag = 1;// Signal that a cycle is complete. 1 = Ready to adjust cooldown when needed, 0 = Do not adjust cooldown.
+int maxCooldown = 180;// Max number of seconds of the cooldown. It will never raise above this amount.
+int minimumcooldown = 1; // Start it with minimum cooldown, then it will increase as time goes on.
+
+
+
+
 
 //=======Setup=======================================
 //Beep out tones over the motor by frequency (1047,1396,2093) may work well
-void beep_motor(int f1, int f2, int f3){
-	analogWrite(MOTPIN, 0);
-	tone(MOTPIN, f1);
-	delay(250);
-	tone(MOTPIN, f2);
-	delay(250);
-	tone(MOTPIN, f3);
-	delay(250);
-	noTone(MOTPIN);
-	analogWrite(MOTPIN,motorSpeed);
-}
+void beep_motor(int f1, int f2, int f3)
+	{
+		analogWrite(MOTPIN, 0);
+		tone(MOTPIN, f1);
+		delay(250);
+		tone(MOTPIN, f2);
+		delay(250);
+		tone(MOTPIN, f3);
+		delay(250);
+		noTone(MOTPIN);
+		analogWrite(MOTPIN,motorSpeed);
+	}
 
-void setup() {
-	pinMode(ENC_SW,   INPUT); //Pin to read when encoder is pressed
-	digitalWrite(ENC_SW, HIGH); // Encoder switch pullup
+void setup() 
+	{
+		pinMode(ENC_SW,   INPUT); //Pin to read when encoder is pressed
+		digitalWrite(ENC_SW, HIGH); // Encoder switch pullup
+		analogReference(EXTERNAL);
 
-	analogReference(EXTERNAL);
-
-	// Classic AVR based Arduinos have a PWM frequency of about 490Hz which
-	// causes the motor to whine.  Change the prescaler to achieve 31372Hz.
+		// Classic AVR based Arduinos have a PWM frequency of about 490Hz which
+		// causes the motor to whine.  Change the prescaler to achieve 31372Hz.
 	
-	// As far as I understand it, sbi and cbi have been depreciated, and this is a replacement. I cannot compile to code without this replacement (or simply removing the lines).
-	//#define sbi(port, bit) (port) |= (1 << (bit))
-	//#define cbi(port, bit) (port) &= ~(1 << (bit))
-	//sbi(TCCR1B, CS10);
-	//cbi(TCCR1B, CS11);
-	//cbi(TCCR1B, CS12);
-	TCCR1B |= (1<<CS10);
-	TCCR1B |= (1<<CS11);
-	TCCR1B |= (1<<CS12);
+		// As far as I understand it, sbi and cbi have been depreciated, and this is a replacement. I cannot compile to code without this replacement (or simply removing the lines).
+		#define sbi(port, bit) (port) |= (1 << (bit))
+		#define cbi(port, bit) (port) &= ~(1 << (bit))
+		sbi(TCCR1B, CS10);
+		cbi(TCCR1B, CS11);
+		cbi(TCCR1B, CS12);
 
-	pinMode(MOTPIN,OUTPUT); //Enable "analog" out (PWM)
+		pinMode(MOTPIN,OUTPUT); //Enable "analog" out (PWM)
 
-	pinMode(BUTTPIN,INPUT); //default is 10 bit resolution (1024), 0-3.3
+		pinMode(BUTTPIN,INPUT); //default is 10 bit resolution (1024), 0-3.3
 
-	raPressure.clear(); //Initialize a running pressure average
+		raPressure.clear(); //Initialize a running pressure average
 
-	digitalWrite(MOTPIN, LOW);//Make sure the motor is off
+		digitalWrite(MOTPIN, LOW);//Make sure the motor is off
 
-	delay(3000); // 3 second delay for recovery
+		delay(3000); // 3 second delay for recovery
 
-	Serial.begin(115200);
+		Serial.begin(115200);
 
-	FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
-	// limit power draw to .6A at 5v... Didn't seem to work in my FastLED version though
-	//FastLED.setMaxPowerInVoltsAndMilliamps(5,MAX_PRESSURE_LIMIT);
-	FastLED.setBrightness(BRIGHTNESS);
+		FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+		// limit power draw to .6A at 5v... Didn't seem to work in my FastLED version though
+		//FastLED.setMaxPowerInVoltsAndMilliamps(5,MAX_PRESSURE_LIMIT);
+		FastLED.setBrightness(BRIGHTNESS);
 
-	//Recall saved settings from memory
-	sensitivity = EEPROM.read(SENSITIVITY_ADDR);
-	maxMotorSpeed = min(EEPROM.read(MAX_SPEED_ADDR),MOT_MAX); //Obey the MOT_MAX the first power cycle after changing it.
-	beep_motor(1047,1396,2093); //Power on beep
-}
+		//Recall saved settings from memory
+		sensitivity = EEPROM.read(SENSITIVITY_ADDR);
+		maxMotorSpeed = min(EEPROM.read(MAX_SPEED_ADDR),MOT_MAX); //Obey the MOT_MAX the first power cycle after changing it.
+		beep_motor(1047,1396,2093); //Power on beep
+	}
 
 //=======LED Drawing Functions=================
-
 //Draw a "cursor", one pixel representing either a pressure or encoder position value
 //C1,C2,C3 are colors for each of 3 revolutions over the 13 LEDs (39 values)
-void draw_cursor_3(int pos,CRGB C1, CRGB C2, CRGB C3){
-	pos = constrain(pos,0,NUM_LEDS*3-1);
-	int colorNum = pos/NUM_LEDS; //revolution number
-	int cursorPos = pos % NUM_LEDS; //place on circle, from 0-12
-	switch(colorNum){
-		case 0:
-			leds[cursorPos] = C1;
-			break;
-		case 1:
-			leds[cursorPos] = C2;
-			break;
-		case 2:
-			leds[cursorPos] = C3;
-			break;
+void draw_cursor_3(int pos,CRGB C1, CRGB C2, CRGB C3)
+	{
+		pos = constrain(pos,0,NUM_LEDS*3-1);
+		int colorNum = pos/NUM_LEDS; //revolution number
+		int cursorPos = pos % NUM_LEDS; //place on circle, from 0-12
+		switch(colorNum)
+		{
+			case 0:
+				leds[cursorPos] = C1;
+				break;
+			case 1:
+				leds[cursorPos] = C2;
+				break;
+			case 2:
+				leds[cursorPos] = C3;
+				break;
+		}
 	}
-}
 
 //Draw a "cursor", one pixel representing either a pressure or encoder position value
-void draw_cursor(int pos,CRGB C1){
-	pos = constrain(pos,0,NUM_LEDS-1);
-	leds[pos] = C1;
-}
+void draw_cursor(int pos,CRGB C1)
+	{
+		pos = constrain(pos,0,NUM_LEDS-1);
+		leds[pos] = C1;
+	}
 
 //Draw 3 revolutions of bars around the LEDs. From 0-39, 3 colors
-void draw_bars_3(int pos,CRGB C1, CRGB C2, CRGB C3){
-	pos = constrain(pos,0,NUM_LEDS*3-1);
-	int colorNum = pos/NUM_LEDS; //revolution number
-	int barPos = pos % NUM_LEDS; //place on circle, from 0-12
-	switch(colorNum){
-		case 0:
-			fill_gradient_RGB(leds,0,C1,barPos,C1);
-			//leds[barPos] = C1;
-		break;
-		case 1:
-			fill_gradient_RGB(leds,0,C1,barPos,C2);
-		break;
-		case 2:
-			fill_gradient_RGB(leds,0,C2,barPos,C3);
-		break;
+void draw_bars_3(int pos,CRGB C1, CRGB C2, CRGB C3)
+	{
+		pos = constrain(pos,0,NUM_LEDS*3-1);
+		int colorNum = pos/NUM_LEDS; //revolution number
+		int barPos = pos % NUM_LEDS; //place on circle, from 0-12
+		switch(colorNum)
+		{
+			case 0:
+				fill_gradient_RGB(leds,0,C1,barPos,C1);
+				//leds[barPos] = C1;
+			break;
+			case 1:
+				fill_gradient_RGB(leds,0,C1,barPos,C2);
+			break;
+			case 2:
+				fill_gradient_RGB(leds,0,C2,barPos,C3);
+			break;
+		}
 	}
-}
 
 //Provide a limited encoder reading corresponting to tacticle clicks on the knob.
 //Each click passes through 4 encoder pulses. This reduces it to 1 pulse per click
-int encLimitRead(int minVal, int maxVal){
-	if(myEnc.read()>maxVal*4)myEnc.write(maxVal*4);
-	else if(myEnc.read()<minVal*4) myEnc.write(minVal*4);
-	return constrain(myEnc.read()/4,minVal,maxVal);
-}
+int encLimitRead(int minVal, int maxVal)
+	{
+		if(myEnc.read()>maxVal*4)myEnc.write(maxVal*4);
+		else if(myEnc.read()<minVal*4) myEnc.write(minVal*4);
+		return constrain(myEnc.read()/4,minVal,maxVal);
+	}
 
 //=======Program Modes/States==================
-
 // Manual vibrator control mode (red), still shows orgasm closeness in background
-void run_manual() {
-	//In manual mode, only allow for 13 cursor positions, for adjusting motor speed.
-	int knob = encLimitRead(0,NUM_LEDS-1);
-	motorSpeed = map(knob, 0, NUM_LEDS-1, 0., (float)MOT_MAX);
-	analogWrite(MOTPIN, motorSpeed);
+void run_manual() 
+	{
+		//In manual mode, only allow for 13 cursor positions, for adjusting motor speed.
+		int knob = encLimitRead(0,NUM_LEDS-1);
+		motorSpeed = map(knob, 0, NUM_LEDS-1, 0., (float)MOT_MAX);
+		analogWrite(MOTPIN, motorSpeed);
 
-	//gyrGraphDraw(averagePressure, 0, 4 * 3 * NUM_LEDS);
-	int presDraw = map(constrain(pressure - averagePressure, 0, pressureLimit),0,pressureLimit,0,NUM_LEDS*3);
-	draw_bars_3(presDraw, CRGB::Green,CRGB::Yellow,CRGB::Red);
-	draw_cursor(knob, CRGB::Red);
-}
+		//gyrGraphDraw(averagePressure, 0, 4 * 3 * NUM_LEDS);
+		int presDraw = map(constrain(pressure - averagePressure, 0, pressureLimit),0,pressureLimit,0,NUM_LEDS*3);
+		draw_bars_3(presDraw, CRGB::Green,CRGB::Yellow,CRGB::Red);
+		draw_cursor(knob, CRGB::Red);
+	}
 
 // Automatic edging mode, knob adjust sensitivity.
-void run_auto() {
-	static float motorIncrement = 0.0;
-	motorIncrement = ((float)maxMotorSpeed / ((float)FREQUENCY * (float)rampUp));
+void run_auto() 
+	{
+		static float motorIncrement = 0.0;
+		motorIncrement = ((float)maxMotorSpeed / ((float)FREQUENCY * (float)rampUp));
+		int knob = encLimitRead(0,(3*NUM_LEDS)-1);
+		sensitivity = knob*4; //Save the setting if we leave and return to this state
+		//Reverse "Knob" to map it onto a pressure limit, so that it effectively adjusts sensitivity
+		pressureLimit = map(knob, 0, 3 * (NUM_LEDS - 1), (float)MAX_PRESSURE_LIMIT, 1); //set the limit of delta pressure before the vibrator turns off
+		//When someone clenches harder than the pressure limit
+		if (pressure - averagePressure > pressureLimit) 
+		{
+			switch(cooldownType)
+			{
+				case 1:
+					motorSpeed = -.5*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (half the ramp up time). otorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
+					break;
+					
+				case 2:
+					motorSpeed = -2*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (double the ramp up time). otorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
+					break;
+				case 3:
+					motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
+					break;
+				case 4:
+					motorSpeed = -1*(float)minimumcooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
+					if (cooldownFlag == 1)
+					{
+						cooldownFlag = 0; // Set cooldown flag to show that the edge has been made, so don't adjust the cooldown anymore this cycle.
+						if (minimumcooldown <= maxCooldown) 
+						{
+							minimumcooldown += cooldownStep; // Start fast and increase the cooldown to be slower and slower as time goes on.
+						}
+					}
+					break;
+				case 5:
+					motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
+					if (cooldownFlag == 1)
+					{
+						cooldownFlag = 0; // Set cooldown flag to show that the edge has been made, so don't adjust the cooldown anymore this cycle.
+						if (cooldown <= maxCooldown) 
+						{
+							pressureLimit == pressureLimit - pressureStep; // Start fast and increase the cooldown to be slower and slower as time goes on.
+						}
+					}
+					break;
+			}
+		}
+		else 
+		{
+			if (motorSpeed < (float)maxMotorSpeed) 
+			{
+				motorSpeed += motorIncrement;//If it's below the max speed, ramp it up a notch towards max speed.
+			}
+			if (motorSpeed > MOT_MIN) 
+			{
+				analogWrite(MOTPIN, (int) motorSpeed);// If the speed is below the motor minimum, then turn it on at the speed set.
+				} 
+				else 
+				{
+					analogWrite(MOTPIN, 0);
+					cooldownFlag = 1;// This might have to go into the upper one depending on what triggers when.
+				}
 
-	int knob = encLimitRead(0,(3*NUM_LEDS)-1);
-	sensitivity = knob*4; //Save the setting if we leave and return to this state
-	//Reverse "Knob" to map it onto a pressure limit, so that it effectively adjusts sensitivity
-	pressureLimit = map(knob, 0, 3 * (NUM_LEDS - 1), (float)MAX_PRESSURE_LIMIT, 1); //set the limit of delta pressure before the vibrator turns off
-	//When someone clenches harder than the pressure limit
-	if (pressure - averagePressure > pressureLimit) {
-		if (cooldownType == 1) {
-			motorSpeed = -.5*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (half the ramp up time). motorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
-		}
-		else if (cooldownType == 2) {
-			motorSpeed = -2*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (double the ramp up time). motorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
-		}
-		else if (cooldownType == 3) {
-			motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
-		}
-		else if (cooldownType == 4) {
-			motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
-		if (cooldownFlag == 1){
-			cooldownFlag = 0; // Set cooldown flag to show that the edge has been made, so don't adjust the cooldown anymore this cycle.
-			if (cooldown <= maxCooldown) {
-			cooldown += cooldownStep; // Start fast and increase the cooldown to be slower and slower as time goes on.
-			}
-			}
-		}
-		else if (cooldownType == 5) {
-			motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
-		if (cooldownFlag == 1){
-			cooldownFlag = 0; // Set cooldown flag to show that the edge has been made, so don't adjust the cooldown anymore this cycle.
-			if (cooldown <= maxCooldown) {
-			pressureLimit == pressureLimit - pressureStep; // Start fast and increase the cooldown to be slower and slower as time goes on.
-			}
-			}
+				int presDraw = map(constrain(pressure - averagePressure, 0, pressureLimit),0,pressureLimit,0,NUM_LEDS*3);
+				draw_bars_3(presDraw, CRGB::Green,CRGB::Yellow,CRGB::Red);
+				draw_cursor_3(knob, CRGB(50,50,200),CRGB::Blue,CRGB::Purple);
+		
 		}
 	}
-  else if (motorSpeed < (float)maxMotorSpeed) {
-	motorSpeed += motorIncrement;//If it's below the max speed, ramp it up a notch towards max speed.
-  }
-  if (motorSpeed > MOT_MIN) {
-		analogWrite(MOTPIN, (int) motorSpeed);// If the speed is below the motor minimum, then turn it on at the speed set.
-	} else {
-		analogWrite(MOTPIN, 0);
-		cooldownFlag = 1;// This might have to go into the upper one depending on what triggers when.
-	}
-
-	int presDraw = map(constrain(pressure - averagePressure, 0, pressureLimit),0,pressureLimit,0,NUM_LEDS*3);
-	draw_bars_3(presDraw, CRGB::Green,CRGB::Yellow,CRGB::Red);
-	draw_cursor_3(knob, CRGB(50,50,200),CRGB::Blue,CRGB::Purple);
-}
-
+		
 //Setting menu for adjusting the maximum vibrator speed automatic mode will ramp up to
 void run_opt_speed() {
 	Serial.println("speed settings");
@@ -512,10 +528,7 @@ void loop() {
 	Serial.print(pressure); //(Original ADC value - 12 bits, 0-4095)
 	Serial.print(",");
 	Serial.println(averagePressure); //Running average of (default last 25 seconds) pressure
-	if (cooldownType == 4){
-		Serial.print(",");
-		Serial.println(cooldown); //Cooldown amount
-	}
-
+	Serial.print(",");
+	Serial.println(minimumcooldown); //Cooldown amount
   }
 }
