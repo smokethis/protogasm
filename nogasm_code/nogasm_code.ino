@@ -97,7 +97,7 @@ int sensitivity = 0; //orgasm detection sensitivity, persists through different 
 #define OPT_RAMPSPD 4
 #define OPT_BEEP    5
 #define OPT_PRES    6
-
+#define OPT_COOLDOWNMODE 7
 
 //Button states - no press, short press, long press
 #define BTN_NONE   0
@@ -118,6 +118,7 @@ int pressure = 0;
 int averagePressure = 0; //Running 25 second average pressure
 int rampUp = 30; //Ramp-up time, in seconds
 int cooldownType = 1;// 1=Half of rampup, 2=Double rampup, 3=Time in seconds (cooldown), 4=Slow Creep (Extends cooldown up to max when edge is reached), 5=More Sensitive (will lower level of sensitivity every edge)
+int cooldownTotalModes = 5;
 int pressureLimit = 600; //Limit in change of pressure before the vibrator turns off
 int maxMotorSpeed = 255; //maximum speed the motor will ramp up to in automatic mode
 float motorSpeed = 0; //Motor speed, 0-255 (float to maintain smooth ramping to low speeds)
@@ -362,6 +363,15 @@ void run_opt_pres() {
 	draw_cursor(p,CRGB::White);
 }
 
+void run_opt_cooldownmodesel() {
+	//read encoder. 
+	int position = encLimitRead(1, cooldownTotalModes);	
+	//update leds. 1-5
+	draw_cursor(position, CRGB::Red);
+	//update cooldownType variable.
+	cooldownType = position;
+}
+
 //Poll the knob click button, and check for long/very long presses as well
 uint8_t check_button(){
 	static bool lastBtn = ENC_SW_DOWN;
@@ -412,6 +422,9 @@ switch (state) {
 	case OPT_PRES:
 		run_opt_pres();
 		break;
+	case OPT_COOLDOWNMODE:
+		run_opt_cooldownmodesel();
+		break;
 	default:
 		run_manual();
 		break;
@@ -447,6 +460,8 @@ uint8_t set_state(uint8_t btnState, uint8_t state){
 			motorSpeed = 0;
 			EEPROM.update(SENSITIVITY_ADDR, sensitivity);
 			return MANUAL;
+
+
 		case OPT_SPEED:
 			myEnc.write(0);
 			EEPROM.update(MAX_SPEED_ADDR, maxMotorSpeed);
@@ -455,15 +470,13 @@ uint8_t set_state(uint8_t btnState, uint8_t state){
 			motorSpeed = 0;
 			analogWrite(MOTPIN, motorSpeed); //Turn the motor off for the white pressure monitoring mode
 			return OPT_PRES; //Skip beep and rampspeed settings for now
-		case OPT_RAMPSPD: //Not yet implimented
-			//motorSpeed = 0;
-			//myEnc.write(0);
-			return OPT_BEEP;
 		case OPT_BEEP:
 			myEnc.write(0);
 			return OPT_PRES;
 		case OPT_PRES:
 			myEnc.write(map(maxMotorSpeed,0,255,0,4*(NUM_LEDS)));//start at saved value
+			return OPT_COOLDOWNMODE;	
+		case OPT_COOLDOWNMODE:
 			return OPT_SPEED;
 		}
 	}
@@ -485,6 +498,9 @@ uint8_t set_state(uint8_t btnState, uint8_t state){
 		  case OPT_PRES:
 			myEnc.write(0);
 			return MANUAL;
+		  case OPT_COOLDOWNMODE:
+			myEnc.write(map(maxMotorSpeed,0,255,0,4*(NUM_LEDS)));//start at saved value
+			return AUTO;
 		}
 	}
 	else return MANUAL;
