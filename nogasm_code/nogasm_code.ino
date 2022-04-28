@@ -84,7 +84,7 @@ Encoder myEnc(3, 2); //Quadrature inputs
 #define longBtnCount (LONG_PRESS_MS / period)
 
 //Running pressure average array length and update frequency
-#define RA_HIST_SECONDS 25 // If I lower this, it will reduce the window to samples. Lower could mean butt clenching turns it off more , but it would be quicker to turn it off so I can't sneak one in and a higher value could eliminate that control aspect, but leave it more open to sneaking one in.
+#define RA_HIST_SECONDS 2 // If I lower this, it will reduce the window to samples. Lower could mean butt clenching turns it off more , but it would be quicker to turn it off so I can't sneak one in and a higher value could eliminate that control aspect, but leave it more open to sneaking one in. This used to be 25.
 #define RA_FREQUENCY 6
 #define RA_TICK_PERIOD (FREQUENCY / RA_FREQUENCY)
 RunningAverage raPressure(RA_FREQUENCY*RA_HIST_SECONDS);
@@ -97,7 +97,7 @@ int sensitivity = 0; //orgasm detection sensitivity, persists through different 
 #define OPT_RAMPSPD 4
 #define OPT_BEEP    5
 #define OPT_PRES    6
-#define OPT_COOLDOWNMODE 7
+#define OPT_USER_MODE 7
 
 //Button states - no press, short press, long press
 #define BTN_NONE   0
@@ -117,8 +117,8 @@ CRGB leds[NUM_LEDS];
 int pressure = 0;
 int averagePressure = 0; //Running 25 second average pressure
 int rampUp = 30; //Ramp-up time, in seconds
-int cooldownType = 1;// 1=Half of rampup, 2=Double rampup, 3=Time in seconds (cooldown), 4=Slow Creep (Extends cooldown up to max when edge is reached), 5=More Sensitive (will lower level of sensitivity every edge)
-int cooldownTotalModes = 5;
+int userMode = 1;// 1=Half of rampup, 2=Double rampup, 3=Time in seconds (cooldown), 4=Slow Creep (Extends cooldown up to max when edge is reached), 5=More Sensitive (will lower level of sensitivity every edge)
+int userModeTotal = 5;
 int pressureLimit = 600; //Limit in change of pressure before the vibrator turns off
 int maxMotorSpeed = 255; //maximum speed the motor will ramp up to in automatic mode
 float motorSpeed = 0; //Motor speed, 0-255 (float to maintain smooth ramping to low speeds)
@@ -272,9 +272,12 @@ void run_auto()
 		//Reverse "Knob" to map it onto a pressure limit, so that it effectively adjusts sensitivity
 		pressureLimit = map(knob, 0, 3 * (NUM_LEDS - 1), (float)MAX_PRESSURE_LIMIT, 1); //set the limit of delta pressure before the vibrator turns off
 		//When someone clenches harder than the pressure limit
+		//if (pressure > pressureLimit) 
+		
+		//If you want to take into account the average, use this. The lights take into account average. If you want to take pure pressure, then use the one above. Make sure to remove averagePressure everywhere else though.
 		if (pressure - averagePressure > pressureLimit) 
 		{
-			switch(cooldownType)
+			switch(userMode)
 			{
 				case 1:
 					motorSpeed = -.5*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (half the ramp up time). otorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
@@ -363,13 +366,13 @@ void run_opt_pres() {
 	draw_cursor(p,CRGB::White);
 }
 
-void run_opt_cooldownmodesel() {
+void run_opt_userModeChange() {
 	//read encoder. 
-	int position = encLimitRead(1, cooldownTotalModes);	
+	int position = encLimitRead(1, userModeTotal);	
 	//update leds. 1-5
 	draw_cursor(position, CRGB::Red);
-	//update cooldownType variable.
-	cooldownType = position;
+	//update userMode variable.
+	userMode = position;
 }
 
 //Poll the knob click button, and check for long/very long presses as well
@@ -422,8 +425,8 @@ switch (state) {
 	case OPT_PRES:
 		run_opt_pres();
 		break;
-	case OPT_COOLDOWNMODE:
-		run_opt_cooldownmodesel();
+	case OPT_USER_MODE:
+		run_opt_userModeChange();
 		break;
 	default:
 		run_manual();
@@ -475,8 +478,9 @@ uint8_t set_state(uint8_t btnState, uint8_t state){
 			return OPT_PRES;
 		case OPT_PRES:
 			myEnc.write(map(maxMotorSpeed,0,255,0,4*(NUM_LEDS)));//start at saved value
-			return OPT_COOLDOWNMODE;	
-		case OPT_COOLDOWNMODE:
+			return OPT_USER_MODE;	
+		case OPT_USER_MODE:
+			myEnc.write(map(userMode,1,userModeTotal,0,4*(NUM_LEDS)));//start at saved value
 			return OPT_SPEED;
 		}
 	}
@@ -498,8 +502,9 @@ uint8_t set_state(uint8_t btnState, uint8_t state){
 		  case OPT_PRES:
 			myEnc.write(0);
 			return MANUAL;
-		  case OPT_COOLDOWNMODE:
-			myEnc.write(map(maxMotorSpeed,0,255,0,4*(NUM_LEDS)));//start at saved value
+		  case OPT_USER_MODE:
+			// myEnc.write(map(maxMotorSpeed,0,255,0,4*(NUM_LEDS)));//start at saved value
+			myEnc.write(map(userMode,1,userModeTotal,0,4*(NUM_LEDS)));//start at saved value
 			return AUTO;
 		}
 	}
