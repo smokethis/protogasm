@@ -274,10 +274,10 @@ void run_auto()
 		sensitivity = knob*4; //Save the setting if we leave and return to this state
 		//Reverse "Knob" to map it onto a pressure limit, so that it effectively adjusts sensitivity
 		pressureLimit = map(knob, 0, 3 * (NUM_LEDS - 1), (float)MAX_PRESSURE_LIMIT, 1); //set the limit of delta pressure before the vibrator turns off
+
 		//When someone clenches harder than the pressure limit
-		//if (pressure > pressureLimit) 
 		
-		//If you want to take into account the average, use this. The lights take into account average. If you want to take pure pressure, then use the one above. Make sure to remove averagePressure everywhere else though.
+		//If you want to take into account the average, use the code as is. The lights take into account average. If you want to take pure pressure, then use "if (pressure > pressureLimit)". Make sure to remove averagePressure everywhere else though.
 		if (pressure - averagePressure > pressureLimit) 
 		{
 			switch(userMode)
