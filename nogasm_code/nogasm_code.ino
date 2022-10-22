@@ -284,7 +284,7 @@ void run_auto()
 					break;
 					
 				case 2:
-					motorSpeed = -2*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (double the ramp up time). otorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
+					motorSpeed = -2*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (double the ramp up time). MotorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
 					break;
 				case 3:
 					motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
