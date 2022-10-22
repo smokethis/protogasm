@@ -158,9 +158,12 @@ void setup()
 		// Classic AVR based Arduinos have a PWM frequency of about 490Hz which
 		// causes the motor to whine.  Change the prescaler to achieve 31372Hz.
 	
-		// As far as I understand it, sbi and cbi have been depreciated, and this is a replacement. I cannot compile to code without this replacement (or simply removing the lines).
-		#define sbi(port, bit) (port) |= (1 << (bit))
-		#define cbi(port, bit) (port) &= ~(1 << (bit))
+		// As far as I understand it, sbi and cbi have been depreciated, and this is a replacement. I cannot compile to code without this replacement (or simply removing the lines). The below commented code is what used to be here and what is active is the correct way it seems. Leaving commented code here just in case the post is incorrect.
+		// #define cbi(port, bit) (port) &= ~(1 << (bit))
+		// #define sbi(port, bit) (port) |= (1 << (bit))
+		
+		#define cbi(sfr, bit) (_SFR_BYTE(sfr) &= ~_BV(bit));
+		#define sbi(sfr, bit) (_SFR_BYTE(sfr) |= _BV(bit));
 		sbi(TCCR1B, CS10);
 		cbi(TCCR1B, CS11);
 		cbi(TCCR1B, CS12);
