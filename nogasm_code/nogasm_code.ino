@@ -280,7 +280,7 @@ void run_auto()
 			switch(userMode)
 			{
 				case 1:
-					motorSpeed = -.5*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (half the ramp up time). otorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
+					motorSpeed = -.5*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (half the ramp up time). MotorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
 					break;
 					
 				case 2:
