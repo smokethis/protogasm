@@ -117,8 +117,8 @@ CRGB leds[NUM_LEDS];
 int pressure = 0;
 int averagePressure = 0; //Running 25 second average pressure
 int rampUp = 30; //Ramp-up time, in seconds
-int userMode = 1;// 1=Half of rampup, 2=Double rampup, 3=Time in seconds (cooldown), 4=Slow Creep (Extends cooldown up to max when edge is reached), 5=More Sensitive (will lower level of sensitivity every edge)
-int userModeTotal = 5;
+int userMode = 1;// 1=Half of rampup, 2=Double rampup, 3=Time in seconds (cooldown), 4=Slow Creep (Extends cooldown up to max when edge is reached), 5=More Sensitive (will lower level of sensitivity every edge), 6=The more you clench, the slower the vibrator gets.
+int userModeTotal = 6;
 int pressureLimit = 600; //Limit in change of pressure before the vibrator turns off
 int maxMotorSpeed = 255; //maximum speed the motor will ramp up to in automatic mode
 float motorSpeed = 0; //Motor speed, 0-255 (float to maintain smooth ramping to low speeds)
@@ -284,14 +284,16 @@ void run_auto()
 			{
 				case 1:
 					motorSpeed = -.5*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (half the ramp up time). MotorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
-					break;
+				break;
 					
 				case 2:
 					motorSpeed = -2*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (double the ramp up time). MotorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
-					break;
+				break;
+				
 				case 3:
 					motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
-					break;
+				break;
+				
 				case 4:
 					motorSpeed = -1*(float)minimumcooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
 					if (cooldownFlag == 1)
@@ -302,7 +304,8 @@ void run_auto()
 							minimumcooldown += cooldownStep; // Start fast and increase the cooldown to be slower and slower as time goes on.
 						}
 					}
-					break;
+				break;
+				
 				case 5:
 					motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
 					if (cooldownFlag == 1)
@@ -313,7 +316,35 @@ void run_auto()
 							pressureLimit == pressureLimit - pressureStep; // Start fast and increase the cooldown to be slower and slower as time goes on.
 						}
 					}
-					break;
+				break;
+				
+				// This comes from noon3e on chastitymansion. This is the description that he gave. 
+
+				//I recently flashed an edited firmware to make it slow the vibrator the more the pressure on the plug rises as you get excited. I have found out in this way the device is more reliable in making you edge without crossing the point of no return.
+
+				case 6:
+					LimitSpeed = (float)maxMotorSpeed - (1.15 * (pressure - averagePressure) / pressureLimit * (float
+					maxMotorSpeed);
+  					motorSpeed = -(.5 * (float)rampUp * ((float)FREQUENCY * motorIncrement) + 10); //Stay off for a while (half the ramp up time) 
+					if (LimitSpeed >= 0) 
+					{
+						if (motorSpeed <= LimitSpeed)
+						{
+							motorSpeed += motorIncrement;
+							LimitSpeed = (float)maxSpeed - (1.15 * (pressure - averagePressure) / pressureLimit * (float)maxMotorSpeed);
+						} 
+						else
+						{
+							motorSpeed -= 3.5 * motorIncrement ;
+							LimitSpeed = (float)maxMotorSpeed - (1.15 * (pressure - averagePressure) / pressureLimit * (float)maxMotorSpeed);
+						}
+					} 
+					else 
+					{
+						motorSpeed = 0;
+						LimitSpeed = (float)maxMotorSpeed - (1.15 * (pressure - averagePressure) / pressureLimit * (float)maxMotorSpeed);
+					}
+				break;
 			}
 		}
 		else 
@@ -372,7 +403,7 @@ void run_opt_pres() {
 void run_opt_userModeChange() {
 	//read encoder. 
 	int position = encLimitRead(1, userModeTotal);	
-	//update leds. 1-5
+	//update leds 1-how many modes.
 	draw_cursor(position, CRGB::Red);
 	//update userMode variable.
 	userMode = position;
