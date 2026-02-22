@@ -313,8 +313,7 @@ void run_auto()
                 {
                     cooldownFlag = 0;
                     if (cooldown <= maxCooldown) 
-                        pressureLimit = pressureLimit - pressureStep; // NOTE: was "==" (comparison not assignment) - fixed
-                }
+                        pressureLimit = max(pressureLimit - pressureStep, 10); // Never let it hit 0
             break;
             
             case 6:
