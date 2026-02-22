@@ -277,7 +277,7 @@ void run_auto()
     
     int knob = encLimitRead(0,(3*NUM_LEDS)-1);
     sensitivity = knob*4;
-    pressureLimit = map(knob, 0, 3 * (NUM_LEDS - 1), (float)MAX_PRESSURE_LIMIT, 1);
+    pressureLimit = map(knob, 0, 3 * (NUM_LEDS - 1), MAX_PRESSURE_LIMIT, 1);
 
     if (pressure - averagePressure > pressureLimit) 
     {
