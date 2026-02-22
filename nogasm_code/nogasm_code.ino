@@ -270,108 +270,94 @@ void run_manual()
 
 // Automatic edging mode, knob adjust sensitivity.
 void run_auto() 
-	{
-		static float motorIncrement = 0.0;
-		static float LimitSpeed = 0.0;
-		motorIncrement = ((float)maxMotorSpeed / ((float)FREQUENCY * (float)rampUp));
-		int knob = encLimitRead(0,(3*NUM_LEDS)-1);
-		sensitivity = knob*4; //Save the setting if we leave and return to this state
-		//Reverse "Knob" to map it onto a pressure limit, so that it effectively adjusts sensitivity
-		pressureLimit = map(knob, 0, 3 * (NUM_LEDS - 1), (float)MAX_PRESSURE_LIMIT, 1); //set the limit of delta pressure before the vibrator turns off
+{
+    static float motorIncrement = 0.0;
+    static float LimitSpeed = 0.0;
+    motorIncrement = ((float)maxMotorSpeed / ((float)FREQUENCY * (float)rampUp));
+    
+    int knob = encLimitRead(0,(3*NUM_LEDS)-1);
+    sensitivity = knob*4;
+    pressureLimit = map(knob, 0, 3 * (NUM_LEDS - 1), (float)MAX_PRESSURE_LIMIT, 1);
 
-		//When someone clenches harder than the pressure limit
-		
-		//If you want to take into account the average, use the code as is. The lights take into account average. If you want to take pure pressure, then use "if (pressure > pressureLimit)". Make sure to remove averagePressure everywhere else though.
-		if (pressure - averagePressure > pressureLimit) 
-		{
-			switch(userMode)
-			{
-				case 1: //Off for half ramp time
-					motorSpeed = -.5*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (half the ramp up time). MotorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
-				break;
-					
-				case 2: //Off for double ramp time
-					motorSpeed = -2*(float)rampUp*((float)FREQUENCY*motorIncrement); //Stay off for a while (double the ramp up time). MotorSpeed is negative here so that seems to indicate that the time now counts up at 0 power for however long.
-				break;
-				
-				case 3: //Not sure?
-					motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
-				break;
-				
-				case 4: //Something about cooldown?
-					motorSpeed = -1*(float)minimumcooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
-					if (cooldownFlag == 1)
-					{
-						cooldownFlag = 0; // Set cooldown flag to show that the edge has been made, so don't adjust the cooldown anymore this cycle.
-						if (minimumcooldown <= maxCooldown) 
-						{
-							minimumcooldown += cooldownStep; // Start fast and increase the cooldown to be slower and slower as time goes on.
-						}
-					}
-				break;
-				
-				case 5: //Something about pressure for cooldown?
-					motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement); // This SHOULD use seconds before ramping up.
-					if (cooldownFlag == 1)
-					{
-						cooldownFlag = 0; // Set cooldown flag to show that the edge has been made, so don't adjust the cooldown anymore this cycle.
-						if (cooldown <= maxCooldown) 
-						{
-							pressureLimit == pressureLimit - pressureStep; // Start fast and increase the cooldown to be slower and slower as time goes on.
-						}
-					}
-				break;
-				
-				// This comes from noon3e on chastitymansion. This is the description that he gave. 
+    if (pressure - averagePressure > pressureLimit) 
+    {
+        // Pressure exceeded - all cases handle their cooldown reset here
+        switch(userMode)
+        {
+            case 1:
+                motorSpeed = -.5*(float)rampUp*((float)FREQUENCY*motorIncrement);
+            break;
+                
+            case 2:
+                motorSpeed = -2*(float)rampUp*((float)FREQUENCY*motorIncrement);
+            break;
+            
+            case 3:
+                motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement);
+            break;
+            
+            case 4:
+                motorSpeed = -1*(float)minimumcooldown*((float)FREQUENCY*motorIncrement);
+                if (cooldownFlag == 1)
+                {
+                    cooldownFlag = 0;
+                    if (minimumcooldown <= maxCooldown) 
+                        minimumcooldown += cooldownStep;
+                }
+            break;
+            
+            case 5:
+                motorSpeed = -1*(float)cooldown*((float)FREQUENCY*motorIncrement);
+                if (cooldownFlag == 1)
+                {
+                    cooldownFlag = 0;
+                    if (cooldown <= maxCooldown) 
+                        pressureLimit = pressureLimit - pressureStep; // NOTE: was "==" (comparison not assignment) - fixed
+                }
+            break;
+            
+            case 6:
+                // Pressure fully exceeded - just do the cooldown like case 1
+                motorSpeed = -(.5 * (float)rampUp * ((float)FREQUENCY * motorIncrement) + 10);
+            break;
+        }
+    }
+    else 
+    {
+        // Pressure is within limits - handle ramping up
+        if (userMode == 6)
+        {
+            // Continuously recalculate the speed ceiling based on current pressure
+            // As pressure rises toward pressureLimit, LimitSpeed falls toward 0
+            LimitSpeed = (float)maxMotorSpeed - (1.15 * (pressure - averagePressure) / pressureLimit * (float)maxMotorSpeed);
+            LimitSpeed = constrain(LimitSpeed, 0, (float)maxMotorSpeed); // Safety clamp
+            
+            if (motorSpeed < LimitSpeed)
+                motorSpeed += motorIncrement;          // Ramp up toward ceiling
+            else if (motorSpeed > LimitSpeed)
+                motorSpeed -= 3.5 * motorIncrement;   // Back off quickly if ceiling dropped
+        }
+        else if (motorSpeed < (float)maxMotorSpeed)
+        {
+            motorSpeed += motorIncrement; // Normal ramp for all other cases
+        }
 
-				//I recently flashed an edited firmware to make it slow the vibrator the more the pressure on the plug rises as you get excited. I have found out in this way the device is more reliable in making you edge without crossing the point of no return.
+        // Motor output - shared by all cases
+        if (motorSpeed > MOT_MIN) 
+        {
+            analogWrite(MOTPIN, (int) motorSpeed);
+        } 
+        else 
+        {
+            analogWrite(MOTPIN, 0);
+            cooldownFlag = 1;
+        }
 
-				case 6: //Depletion mode
-					LimitSpeed = (float)maxMotorSpeed - (1.15 * (pressure - averagePressure) / pressureLimit * (float)maxMotorSpeed);
-  				motorSpeed = -(.5 * (float)rampUp * ((float)FREQUENCY * motorIncrement) + 10); //Stay off for a while (half the ramp up time) 
-					if (LimitSpeed >= 0) 
-					{
-						if (motorSpeed <= LimitSpeed)
-						{
-							motorSpeed += motorIncrement;
-							LimitSpeed = (float)maxMotorSpeed - (1.15 * (pressure - averagePressure) / pressureLimit * (float)maxMotorSpeed);
-						} 
-						else
-						{
-							motorSpeed -= 3.5 * motorIncrement ;
-							LimitSpeed = (float)maxMotorSpeed - (1.15 * (pressure - averagePressure) / pressureLimit * (float)maxMotorSpeed);
-						}
-					} 
-					else 
-					{
-						motorSpeed = 0;
-						LimitSpeed = (float)maxMotorSpeed - (1.15 * (pressure - averagePressure) / pressureLimit * (float)maxMotorSpeed);
-					}
-				break;
-			}
-		}
-		else 
-		{
-			if (motorSpeed < (float)maxMotorSpeed) 
-			{
-				motorSpeed += motorIncrement;//If it's below the max speed, ramp it up a notch towards max speed.
-			}
-			if (motorSpeed > MOT_MIN) 
-			{
-				analogWrite(MOTPIN, (int) motorSpeed);// If the speed is below the motor minimum, then turn it on at the speed set.
-				} 
-				else 
-				{
-					analogWrite(MOTPIN, 0);
-					cooldownFlag = 1;// This might have to go into the upper one depending on what triggers when.
-				}
-
-				int presDraw = map(constrain(pressure - averagePressure, 0, pressureLimit),0,pressureLimit,0,NUM_LEDS*3);
-				draw_bars_3(presDraw, CRGB::Green,CRGB::Yellow,CRGB::Red);
-				draw_cursor_3(knob, CRGB(50,50,200),CRGB::Blue,CRGB::Purple);
-		
-		}
-	}
+        int presDraw = map(constrain(pressure - averagePressure, 0, pressureLimit),0,pressureLimit,0,NUM_LEDS*3);
+        draw_bars_3(presDraw, CRGB::Green,CRGB::Yellow,CRGB::Red);
+        draw_cursor_3(knob, CRGB(50,50,200),CRGB::Blue,CRGB::Purple);
+    }
+}
 		
 //Setting menu for adjusting the maximum vibrator speed automatic mode will ramp up to
 void run_opt_speed() {
