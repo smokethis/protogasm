@@ -281,6 +281,7 @@ void run_auto()
 
     if (pressure - averagePressure > pressureLimit) 
     {
+		analogWrite(MOTPIN, 0); // Stop motor immediately
         // Pressure exceeded - all cases handle their cooldown reset here
         switch(userMode)
         {
