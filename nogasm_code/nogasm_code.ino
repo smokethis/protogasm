@@ -539,8 +539,9 @@ void loop() {
 	static uint8_t state = MANUAL;
 	static int sampleTick = 0;
 	//Run this section at the update frequency (default 60 Hz)
-	if (millis() % period == 0) {
-		delay(1);
+	static unsigned long lastTick = 0;
+	if (millis() - lastTick >= period) {
+		lastTick = millis();
 
 		sampleTick++; //Add pressure samples to the running average slower than 60Hz
 		if (sampleTick % RA_TICK_PERIOD == 0) {
